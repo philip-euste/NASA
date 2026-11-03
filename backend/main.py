@@ -1,9 +1,20 @@
 import httpx
 import xml.etree.ElementTree as ET
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Marswalk API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 MARS_GLOBAL_LAYER = {
     "id": "mars_global_mola",
@@ -202,7 +213,10 @@ async def get_tile_config(layer_id: str):
         "layer_id": info["layer_id"],
         "format": tile["format"],
         "tile_matrix_sets": info["tile_matrix_sets"],
-        "tile_url_template": tile["template"],
+        "tile_url_template": tile["template"].replace(
+        "/1.0.0//{Style}/",
+        "/1.0.0/{Style}/",
+        ),
     }
 
 
