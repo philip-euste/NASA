@@ -1,12 +1,8 @@
-import MarsMap from "./components/map/MarsMap";
-
 function App() {
   return (
-    <main>
+    <main style={{ padding: "30px" }}>
       <h1>Marswalk</h1>
-      <p>Explore the surface of Mars.</p>
-
-      <MarsMap />
+      <p>React frontend is working.</p>
     </main>
   );
 }
