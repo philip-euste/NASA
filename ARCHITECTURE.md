@@ -14,8 +14,7 @@ NASAMartianMap
         ├── components\map
         │   └── MarsMap.tsx 
         ├── data
-        │   ├── mapLayers.js
-        │   └── mapLayers.ts 
+\        │   └── mapLayers.ts 
         ├── features
         │   ├── planetary-explorer
         │   │   └── ExplorerPage.tsx
