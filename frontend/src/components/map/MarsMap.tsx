@@ -1,26 +1,49 @@
 
 import { useEffect, useState } from "react";
-
 import {
   MapContainer,
   TileLayer,
   useMap,
   useMapEvents,
   CircleMarker,
-  Popup
+  Popup,
 } from "react-leaflet";
-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import { MAP_LAYERS } from "../../data/mapLayers";
-import { getDataProvider } from "../../services/dataProviders";
+import type { MapLayerId } from "../../data/mapLayers";
+
+import {
+  getDataProvider,
+  type TileLayerConfig,
+} from "../../services/dataProviders";
+
+interface Coordinates {
+  latitude: number;
+  longitude: number;
+}
+
+interface SavedLocation extends Coordinates {
+  id: number;
+  name: string;
+}
+
+interface MapControllerProps {
+  layerId: MapLayerId;
+  focusLocation: SavedLocation | null;
+  resetCounter: number;
+}
+
+interface MapClickHandlerProps {
+  onSelect: (coordinates: Coordinates) => void;
+}
 
 function MapController({
   layerId,
   focusLocation,
-  resetCounter
-}) {
+  resetCounter,
+}: MapControllerProps) {
   const map = useMap();
 
   useEffect(() => {
@@ -39,14 +62,16 @@ function MapController({
   return null;
 }
 
-function MapClickHandler({ onSelect }) {
+function MapClickHandler({
+  onSelect,
+}: MapClickHandlerProps) {
   useMapEvents({
     click(event) {
       onSelect({
         latitude: event.latlng.lat,
-        longitude: event.latlng.lng
+        longitude: event.latlng.lng,
       });
-    }
+    },
   });
 
   return null;
@@ -54,20 +79,26 @@ function MapClickHandler({ onSelect }) {
 
 export default function MarsMap() {
   const [selectedLayer, setSelectedLayer] =
-    useState("mars_global_mola");
+    useState<MapLayerId>("mars_global_mola");
 
-  const [tileConfig, setTileConfig] = useState(null);
-  const [coordinates, setCoordinates] = useState(null);
-  const [savedLocations, setSavedLocations] = useState([]);
+  const [tileConfig, setTileConfig] =
+    useState<TileLayerConfig | null>(null);
+
+  const [coordinates, setCoordinates] =
+    useState<Coordinates | null>(null);
+
+  const [savedLocations, setSavedLocations] =
+    useState<SavedLocation[]>([]);
 
   const [locationName, setLocationName] = useState("");
   const [opacity, setOpacity] = useState(1);
 
-  const [focusLocation, setFocusLocation] = useState(null);
-  const [resetCounter, setResetCounter] = useState(0);
+  const [focusLocation, setFocusLocation] =
+    useState<SavedLocation | null>(null);
 
+  const [resetCounter, setResetCounter] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   const layer = MAP_LAYERS[selectedLayer];
@@ -87,9 +118,13 @@ export default function MarsMap() {
         if (!cancelled) {
           setTileConfig(config);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         if (!cancelled) {
-          setError(err.message);
+          setError(
+            err instanceof Error
+              ? err.message
+              : "An unexpected error occurred."
+          );
         }
       } finally {
         if (!cancelled) {
@@ -105,12 +140,13 @@ export default function MarsMap() {
     };
   }, [selectedLayer, layer.provider]);
 
-  function saveLocation() {
+  function saveLocation(): void {
     if (!coordinates) return;
 
-    const duplicate = savedLocations.some(location =>
-      Math.abs(location.latitude - coordinates.latitude) < 0.00001 &&
-      Math.abs(location.longitude - coordinates.longitude) < 0.00001
+    const duplicate = savedLocations.some(
+      (location) =>
+        Math.abs(location.latitude - coordinates.latitude) < 0.00001 &&
+        Math.abs(location.longitude - coordinates.longitude) < 0.00001
     );
 
     if (duplicate) {
@@ -118,47 +154,50 @@ export default function MarsMap() {
       return;
     }
 
-    const name = locationName.trim() ||
+    const name =
+      locationName.trim() ||
       `Location ${savedLocations.length + 1}`;
 
-    const newLocation = {
+    const newLocation: SavedLocation = {
       id: Date.now(),
       name,
       latitude: coordinates.latitude,
-      longitude: coordinates.longitude
+      longitude: coordinates.longitude,
     };
 
-    setSavedLocations(current => [
+    setSavedLocations((current) => [
       ...current,
-      newLocation
+      newLocation,
     ]);
 
     setLocationName("");
     setMessage(`${name} saved.`);
   }
 
-  function removeLocation(id) {
-    setSavedLocations(current =>
-      current.filter(location => location.id !== id)
+  function removeLocation(id: number): void {
+    setSavedLocations((current) =>
+      current.filter((location) => location.id !== id)
     );
 
     setMessage("Location removed.");
   }
 
-  function resetView() {
+  function resetView(): void {
     setFocusLocation(null);
-    setResetCounter(current => current + 1);
+    setResetCounter((current) => current + 1);
   }
 
   return (
     <section>
-      <div style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: "12px",
-        alignItems: "center",
-        marginBottom: "12px"
-      }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "12px",
+          alignItems: "center",
+          marginBottom: "12px",
+        }}
+      >
         <label htmlFor="mars-layer">
           Imagery layer:
         </label>
@@ -166,12 +205,14 @@ export default function MarsMap() {
         <select
           id="mars-layer"
           value={selectedLayer}
-          onChange={event => {
-            setSelectedLayer(event.target.value);
+          onChange={(event) => {
+            setSelectedLayer(
+              event.target.value as MapLayerId
+            );
             setFocusLocation(null);
           }}
         >
-          {Object.values(MAP_LAYERS).map(item => (
+          {Object.values(MAP_LAYERS).map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
             </option>
@@ -185,11 +226,13 @@ export default function MarsMap() {
 
       <p>{layer.description}</p>
 
-      <div style={{
-        height: "600px",
-        width: "100%",
-        background: "#171717"
-      }}>
+      <div
+        style={{
+          height: "600px",
+          width: "100%",
+          background: "#171717",
+        }}
+      >
         <MapContainer
           center={layer.center}
           zoom={layer.zoom}
@@ -214,18 +257,18 @@ export default function MarsMap() {
             />
           )}
 
-          {savedLocations.map(location => (
+          {savedLocations.map((location) => (
             <CircleMarker
               key={location.id}
               center={[
                 location.latitude,
-                location.longitude
+                location.longitude,
               ]}
               radius={7}
               pathOptions={{
                 color: "#ffcc00",
                 fillColor: "#ffcc00",
-                fillOpacity: 0.9
+                fillOpacity: 0.9,
               }}
             >
               <Popup>
@@ -245,11 +288,13 @@ export default function MarsMap() {
       )}
 
       {error && (
-        <div style={{
-          padding: "12px",
-          marginTop: "12px",
-          border: "1px solid #dc6666"
-        }}>
+        <div
+          style={{
+            padding: "12px",
+            marginTop: "12px",
+            border: "1px solid #dc6666",
+          }}
+        >
           <strong>Layer loading failed</strong>
           <p>{error}</p>
           <p>
@@ -272,10 +317,13 @@ export default function MarsMap() {
             max="1"
             step="0.05"
             value={opacity}
-            onChange={event =>
+            onChange={(event) =>
               setOpacity(Number(event.target.value))
             }
-            style={{ display: "block", width: "220px" }}
+            style={{
+              display: "block",
+              width: "220px",
+            }}
           />
         </div>
       )}
@@ -295,7 +343,7 @@ export default function MarsMap() {
           <input
             type="text"
             value={locationName}
-            onChange={event =>
+            onChange={(event) =>
               setLocationName(event.target.value)
             }
             placeholder="Location name (optional)"
@@ -316,12 +364,14 @@ export default function MarsMap() {
       )}
 
       <div style={{ padding: "12px" }}>
-        <h3>Saved Locations ({savedLocations.length})</h3>
+        <h3>
+          Saved Locations ({savedLocations.length})
+        </h3>
 
         {savedLocations.length === 0 ? (
           <p>No saved locations yet.</p>
         ) : (
-          savedLocations.map(location => (
+          savedLocations.map((location) => (
             <div
               key={location.id}
               style={{
@@ -330,7 +380,7 @@ export default function MarsMap() {
                 display: "flex",
                 justifyContent: "space-between",
                 flexWrap: "wrap",
-                gap: "10px"
+                gap: "10px",
               }}
             >
               <div>
@@ -344,13 +394,17 @@ export default function MarsMap() {
 
               <div>
                 <button
-                  onClick={() => setFocusLocation(location)}
+                  onClick={() =>
+                    setFocusLocation(location)
+                  }
                 >
                   Go to
                 </button>
 
                 <button
-                  onClick={() => removeLocation(location.id)}
+                  onClick={() =>
+                    removeLocation(location.id)
+                  }
                   style={{ marginLeft: "8px" }}
                 >
                   Remove

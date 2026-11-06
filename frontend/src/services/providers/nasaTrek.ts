@@ -1,42 +1,64 @@
 
+import type {
+  TileLayerConfig,
+  DataProvider,
+} from "../dataProviders";
+
+import type { MapLayerId } from "../../data/mapLayers";
+
 const BASE_URL = "https://trek.nasa.gov/tiles/Mars/EQ";
 
-const NASA_LAYERS = {
+interface NasaLayerDefinition {
+  id: string;
+  static?: boolean;
+  tileUrlTemplate?: string;
+  zoomOffset?: number;
+}
+
+const NASA_LAYERS: Record<MapLayerId, NasaLayerDefinition> = {
   mars_global_mola: {
     id: "Mars_MGS_MOLA_ClrShade_merge_global_463m",
     static: true,
     tileUrlTemplate:
       `${BASE_URL}/Mars_MGS_MOLA_ClrShade_merge_global_463m/1.0.0/default/default028mm/{z}/{y}/{x}.jpg`,
-    zoomOffset: -1
+    zoomOffset: -1,
   },
 
   mars_mola_roughness: {
-    id: "mola_roughness"
+    id: "mola_roughness",
   },
 
   mars_tes_dust: {
-    id: "TES_Dust"
+    id: "TES_Dust",
   },
 
   mars_tes_thermal: {
-    id: "TES_Thermal_Inertia"
-  }
+    id: "TES_Thermal_Inertia",
+  },
 };
 
-function getText(element, name) {
+function getText(
+  element: Element | Document | null,
+  name: string
+): string | undefined {
   return element
     ?.getElementsByTagNameNS("*", name)[0]
     ?.textContent
     ?.trim();
 }
 
-function getElements(element, name) {
-  return [
-    ...element.getElementsByTagNameNS("*", name)
-  ];
+function getElements(
+  element: Element | Document,
+  name: string
+): Element[] {
+  return Array.from(
+    element.getElementsByTagNameNS("*", name)
+  );
 }
 
-async function fetchCapabilities(layer) {
+async function fetchCapabilities(
+  layer: NasaLayerDefinition
+): Promise<TileLayerConfig> {
   const url =
     `${BASE_URL}/${layer.id}/1.0.0/WMTSCapabilities.xml`;
 
@@ -59,9 +81,8 @@ async function fetchCapabilities(layer) {
     throw new Error("Invalid NASA WMTS XML.");
   }
 
-  // Find the requested layer.
   const matchingLayer = getElements(xml, "Layer").find(
-    item => getText(item, "Identifier") === layer.id
+    (item) => getText(item, "Identifier") === layer.id
   );
 
   if (!matchingLayer) {
@@ -70,40 +91,43 @@ async function fetchCapabilities(layer) {
     );
   }
 
-  // Find the default style.
   const styles = getElements(matchingLayer, "Style");
 
   const style =
-    styles.find(item =>
-      ["true", "1"].includes(item.getAttribute("isDefault"))
-    ) || styles[0];
+    styles.find((item) =>
+      ["true", "1"].includes(
+        item.getAttribute("isDefault") ?? ""
+      )
+    ) ?? styles[0];
 
-  const styleId = getText(style, "Identifier");
+  const styleId = style
+    ? getText(style, "Identifier")
+    : undefined;
 
   if (!styleId) {
     throw new Error("No valid WMTS style found.");
   }
 
-  // Find the matrix set referenced by this layer.
-  const matrixSetId = getText(
-    matchingLayer.getElementsByTagNameNS(
-      "*",
-      "TileMatrixSet"
-    )[0]?.parentElement || matchingLayer,
-    "TileMatrixSet"
-  );
+  const tileMatrixSetLink = getElements(
+    matchingLayer,
+    "TileMatrixSetLink"
+  )[0];
+
+  const matrixSetId = tileMatrixSetLink
+    ? getText(tileMatrixSetLink, "TileMatrixSet")
+    : undefined;
 
   if (!matrixSetId) {
     throw new Error("No tile matrix set reference found.");
   }
 
-  // Find the actual matrix set definition.
   const matrixSetDefinition = getElements(
     xml,
     "TileMatrixSet"
-  ).find(item =>
-    getText(item, "Identifier") === matrixSetId &&
-    getElements(item, "TileMatrix").length > 0
+  ).find(
+    (item) =>
+      getText(item, "Identifier") === matrixSetId &&
+      getElements(item, "TileMatrix").length > 0
   );
 
   if (!matrixSetDefinition) {
@@ -115,14 +139,14 @@ async function fetchCapabilities(layer) {
   const matrixIds = getElements(
     matrixSetDefinition,
     "TileMatrix"
-  ).map(item => getText(item, "Identifier"));
+  )
+    .map((item) => getText(item, "Identifier"))
+    .filter((id): id is string => Boolean(id));
 
   if (matrixIds.length === 0) {
     throw new Error("No tile matrix levels found.");
   }
 
-  // Leaflet's default zoom numbering must match
-  // the numeric NASA matrix identifiers.
   const sequential = matrixIds.every(
     (id, index) => id === String(index)
   );
@@ -133,14 +157,13 @@ async function fetchCapabilities(layer) {
     );
   }
 
-  // Find the actual image URL template.
   const resources = getElements(
     matchingLayer,
     "ResourceURL"
   );
 
   const tileResource = resources.find(
-    item => item.getAttribute("resourceType") === "tile"
+    (item) => item.getAttribute("resourceType") === "tile"
   );
 
   const template = tileResource?.getAttribute("template");
@@ -149,57 +172,47 @@ async function fetchCapabilities(layer) {
     throw new Error("No WMTS tile URL template found.");
   }
 
-  const tileUrl = template
-  .replaceAll("{Style}", styleId)
-  .replaceAll("{TileMatrixSet}", matrixSetId)
-  .replaceAll("{TileMatrix}", "{z}")
-  .replaceAll("{TileRow}", "{y}")
-  .replaceAll("{TileCol}", "{x}")
-  .replace(/\/+/g, "/")
-  .replace(/^https:\//, "https://")
-  .replace(/^http:\//, "http:/");
+  const resolvedTileUrl = template
+    .replaceAll("{Style}", styleId)
+    .replaceAll("{TileMatrixSet}", matrixSetId)
+    .replaceAll("{TileMatrix}", "{z}")
+    .replaceAll("{TileRow}", "{y}")
+    .replaceAll("{TileCol}", "{x}");
 
-// Preserve Leaflet's placeholders literally.
-const resolvedTileUrl = tileUrl
-  .replaceAll("%7Bz%7D", "{z}")
-  .replaceAll("%7By%7D", "{y}")
-  .replaceAll("%7Bx%7D", "{x}")
-  .replaceAll("%7bz%7d", "{z}")
-  .replaceAll("%7by%7d", "{y}")
-  .replaceAll("%7bx%7d", "{x}");
-    return {
-  tileUrlTemplate: resolvedTileUrl,
-  zoomOffset: -1,
-  attribution: "NASA Mars Trek",
-  matrixSet: matrixSetId,
-  style: styleId,
-  matrixIds
-};
-
+  return {
+    tileUrlTemplate: resolvedTileUrl,
+    zoomOffset: -1,
+    attribution: "NASA Mars Trek",
+    matrixSet: matrixSetId,
+    style: styleId,
+    matrixIds,
+  };
 }
 
-export const nasaTrekProvider = {
+export const nasaTrekProvider: DataProvider = {
   id: "nasaTrek",
 
-  getAvailableLayers() {
+  getAvailableLayers(): string[] {
     return Object.keys(NASA_LAYERS);
   },
 
-  async getLayerConfig(layerId) {
-    const layer = NASA_LAYERS[layerId];
+  async getLayerConfig(
+    layerId: string
+  ): Promise<TileLayerConfig> {
+    const layer = NASA_LAYERS[layerId as MapLayerId];
 
     if (!layer) {
       throw new Error(`Unknown NASA layer: ${layerId}`);
     }
 
-    if (layer.static) {
+    if (layer.static && layer.tileUrlTemplate) {
       return {
         tileUrlTemplate: layer.tileUrlTemplate,
-        zoomOffset: layer.zoomOffset,
-        attribution: "NASA Mars Trek"
+        zoomOffset: layer.zoomOffset ?? -1,
+        attribution: "NASA Mars Trek",
       };
     }
 
     return fetchCapabilities(layer);
-  }
+  },
 };
